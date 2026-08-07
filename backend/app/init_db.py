@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from app.database import engine, Base
-from app import models  # noqa: F401 — ensures models registered before create_all
+from app import models  # noqa: F401
 
 def init_db():
     with engine.connect() as conn:
