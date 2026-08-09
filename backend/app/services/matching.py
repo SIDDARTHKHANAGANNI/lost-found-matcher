@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models import Item, ItemType, Match
 
-def find_matches(db: Session, item: Item, top_k: int = 5, min_similarity: float = 0.75):
+def find_matches(db: Session, item: Item, top_k: int = 5, min_similarity: float = 0.3):
     opposite_type = ItemType.found if item.type == ItemType.lost else ItemType.lost
 
     # pgvector cosine distance: 1 - cosine_similarity, so smaller = more similar
