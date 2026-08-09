@@ -1,7 +1,5 @@
-import shutil
-import uuid
 from app.database import SessionLocal
-from app.models import Item, ItemType
+from app.models import Item, ItemType, User
 from app.services.embedding import embedding_service
 from app.services.matching import find_matches, save_matches
 SAMPLE_ITEMS = [
@@ -14,14 +12,22 @@ SAMPLE_ITEMS = [
 
 def seed():
     db = SessionLocal()
+
+    seed_user = db.query(User).filter(User.email == "seed@test.com").first()
+    if not seed_user:
+        from app.auth import hash_password
+        seed_user = User(email="seed@test.com", hashed_password=hash_password("seedpass123"))
+        db.add(seed_user)
+        db.commit()
+        db.refresh(seed_user)
+
     for i, entry in enumerate(SAMPLE_ITEMS):
         dest_path = f"uploads/seed_{i}.jpg"
         shutil.copy(entry["source"], dest_path)
-
         embedding = embedding_service.embed_combined(dest_path, entry["description"])
 
         item = Item(
-            user_id=uuid.uuid4(),
+            user_id=seed_user.id,   # <-- changed from uuid.uuid4()
             type=ItemType(entry["type"]),
             category=entry["category"],
             description=entry["description"],
@@ -32,7 +38,6 @@ def seed():
         db.add(item)
         print(f"seeded: {entry['type']} - {entry['category']} from {entry['source']}")
     db.commit()
-
     # second pass — compute matches now that all items exist
     all_items = db.query(Item).all()
     for item in all_items:

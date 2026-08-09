@@ -45,3 +45,13 @@ class Match(Base):
     similarity_score = Column(Float, nullable=False)
     status = Column(Enum(MatchStatus), default=MatchStatus.pending)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+class Claim(Base):
+    __tablename__ = "claims"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("items.id"), nullable=False)  # the found item being claimed
+    claimant_id = Column(UUID(as_uuid=True), nullable=False)
+    identifying_answer = Column(String, nullable=False)
+    status = Column(String, default="pending")  # pending/approved/rejected
+    created_at = Column(DateTime, default=datetime.utcnow)

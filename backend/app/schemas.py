@@ -22,8 +22,7 @@ class ItemOut(BaseModel):
     image_url: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class MatchOut(BaseModel):
     id: UUID
@@ -32,8 +31,7 @@ class MatchOut(BaseModel):
     similarity_score: float
     status: MatchStatus
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
         
 class UserCreate(BaseModel):
     email: str
@@ -43,9 +41,25 @@ class UserOut(BaseModel):
     id: UUID
     email: str
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    
+class ClaimCreate(BaseModel):
+    identifying_answer: str
+
+class ClaimOut(BaseModel):
+    id: UUID
+    item_id: UUID
+    claimant_id: UUID
+    identifying_answer: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class ClaimStatusUpdate(BaseModel):
+    status: str  # "approved" or "rejected"
