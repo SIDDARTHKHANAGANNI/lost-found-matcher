@@ -2,7 +2,11 @@ from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
 from app.models import ItemType, MatchStatus
+from app.models import MatchStatus
 
+class MatchUpdate(BaseModel):
+    status: MatchStatus
+    
 class ItemCreate(BaseModel):
     type: ItemType
     category: str

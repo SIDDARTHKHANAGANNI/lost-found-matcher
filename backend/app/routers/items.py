@@ -9,8 +9,21 @@ from app.services.embedding import embedding_service
 from app.services.matching import find_matches, save_matches
 from app.config import settings
 from app.auth import get_current_user
+from app.schemas import MatchUpdate
+from app.models import Match
+
 
 router = APIRouter()
+
+@router.patch("/matches/{match_id}", response_model=MatchOut)
+def update_match_status(match_id: uuid.UUID, update: MatchUpdate, db: Session = Depends(get_db)):
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    match.status = update.status
+    db.commit()
+    db.refresh(match)
+    return match
 
 @router.post("/", response_model=ItemOut)
 async def create_item(
