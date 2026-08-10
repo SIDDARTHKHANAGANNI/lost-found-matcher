@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lost & Found Matcher</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html" class="active">Post Item</a>
+    <a href="browse.html">Browse Found</a>
+    <a href="matches.html">My Matches</a>
+    <a href="claims.html">Review Claims</a>
+    <a href="#" id="logoutLink">Log out</a>
+  </nav>
+
+  <div class="container" style="margin-top: 20px;">
+    <div class="card">
+      <h1>Report an item</h1>
+      <p class="subtitle">Upload a photo so we can find a match automatically</p>
+
+      <form id="postForm">
+  <div class="form-grid">
+    <div>
+      <label>Type</label>
+      <div class="custom-select">
+        <div class="custom-select-trigger"><span>Lost</span></div>
+        <input type="hidden" id="type" value="lost">
+        <div class="custom-select-options">
+          <div class="custom-select-option selected" data-value="lost">Lost</div>
+          <div class="custom-select-option" data-value="found">Found</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <label for="category">Category</label>
+      <input type="text" id="category" placeholder="e.g. backpack" required>
+    </div>
+
+    <div class="full-width">
+      <label for="description">Description</label>
+      <textarea id="description" rows="3" placeholder="Color, brand, identifying details" required></textarea>
+    </div>
+
+    <div>
+      <label for="location">Location</label>
+      <input type="text" id="location" placeholder="e.g. Library" required>
+    </div>
+
+    <div>
+      <label for="image">Photo</label>
+      <input type="file" id="image" accept="image/*" required>
+    </div>
+  </div>
+
+  <button type="submit" id="submitBtn">Post item</button>
+  <div class="error" id="errorMsg"></div>
+</form>
+
+      <div id="matchResult" style="margin-top: 20px; display: none;"></div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>initCustomSelects();</script>
+  <script>
+    requireAuth();
+
+    document.getElementById("logoutLink").addEventListener("click", (e) => {
+      e.preventDefault();
+      clearToken();
+      window.location.href = "login.html";
+    });
+
+    document.getElementById("postForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById("submitBtn");
+      const errorMsg = document.getElementById("errorMsg");
+      const matchResult = document.getElementById("matchResult");
+      errorMsg.style.display = "none";
+      matchResult.style.display = "none";
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Posting...";
+
+      const formData = new FormData();
+      formData.append("type", document.getElementById("type").value);
+      formData.append("category", document.getElementById("category").value);
+      formData.append("description", document.getElementById("description").value);
+      formData.append("location", document.getElementById("location").value);
+      formData.append("image", document.getElementById("image").files[0]);
+
+      try {
+        const item = await apiRequest("/items/", {
+          method: "POST",
+          body: formData,
+        });
+
+        // check for matches right after posting
+        let matches = [];
+        try {
+          matches = await apiRequest(`/items/${item.id}/matches`);
+        } catch (e) {
+          matches = []; // no matches found is fine
+        }
+
+        matchResult.style.display = "block";
+        if (matches.length > 0) {
+          matchResult.innerHTML = `<strong style="color: var(--success);">Item posted — ${matches.length} possible match(es) found!</strong> Check "My Matches" to review.`;
+        } else {
+          matchResult.innerHTML = `<strong>Item posted.</strong> No matches yet — we'll keep checking as new items come in.`;
+        }
+
+        document.getElementById("postForm").reset();
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.style.display = "block";
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Post item";
+      }
+    });
+  </script>
+</body>
+</html>

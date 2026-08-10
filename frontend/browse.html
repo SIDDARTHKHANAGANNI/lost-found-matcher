@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Browse Found Items — Lost & Found</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html">Post Item</a>
+    <a href="browse.html" class="active">Browse Found</a>
+    <a href="matches.html">My Matches</a>
+    <a href="claims.html">Review Claims</a>
+    <a href="#" id="logoutLink">Log out</a>
+  </nav>
+ 
+  <div class="container" style="max-width: 900px;">
+    <div class="card">
+      <h1>Browse found items</h1>
+      <p class="subtitle">No photo of your lost item? Search here instead</p>
+ 
+      <div class="form-grid">
+        <div>
+          <label>Looking in</label>
+          <div class="custom-select">
+            <div class="custom-select-trigger"><span>Found items</span></div>
+            <input type="hidden" id="searchType" value="found">
+            <div class="custom-select-options">
+              <div class="custom-select-option selected" data-value="found">Found items</div>
+              <div class="custom-select-option" data-value="lost">Lost items</div>
+            </div>
+          </div>
+        </div>
+ 
+        <div>
+          <label for="searchCategory">Category</label>
+          <input type="text" id="searchCategory" placeholder="e.g. backpack">
+        </div>
+ 
+        <div>
+          <label for="searchLocation">Location</label>
+          <input type="text" id="searchLocation" placeholder="e.g. Library">
+        </div>
+ 
+        <div>
+          <label for="searchText">Keyword</label>
+          <input type="text" id="searchText" placeholder="e.g. black, blue elephant">
+        </div>
+      </div>
+ 
+      <button id="searchBtn">Search</button>
+    </div>
+ 
+    <div id="results" class="tile-grid" style="margin-top: 24px;"></div>
+  </div>
+ 
+  <script src="js/api.js"></script>
+  <script>initCustomSelects();</script>
+  <script>
+    requireAuth();
+ 
+    document.getElementById("logoutLink").addEventListener("click", (e) => {
+      e.preventDefault();
+      clearToken();
+      window.location.href = "login.html";
+    });
+ 
+    async function runSearch() {
+      const type = document.getElementById("searchType").value;
+      const category = document.getElementById("searchCategory").value;
+      const location = document.getElementById("searchLocation").value;
+      const search = document.getElementById("searchText").value;
+ 
+      const params = new URLSearchParams({ type });
+      if (category) params.append("category", category);
+      if (location) params.append("location", location);
+      if (search) params.append("search", search);
+ 
+      const results = document.getElementById("results");
+      results.innerHTML = `<p style="color: var(--muted);">Searching...</p>`;
+ 
+      try {
+        const items = await apiRequest(`/items/browse?${params.toString()}`);
+        if (items.length === 0) {
+          results.innerHTML = `<p style="color: var(--muted);">No items found. Try different filters.</p>`;
+          return;
+        }
+        results.innerHTML = items.map(item => `
+          <div class="item-card">
+            <span class="badge badge-${item.type}">${item.type}</span>
+            <h3>${item.category}</h3>
+            <p>${item.description}</p>
+            <p><strong>Location:</strong> ${item.location}</p>
+            <img src="http://localhost:8000/${item.image_url}" style="width:100%; max-height:220px; object-fit:cover; border-radius:10px; margin-top:10px;" onerror="this.style.display='none'">
+            <button onclick="submitClaim('${item.id}')">This is mine — claim it</button>
+          </div>
+        `).join("");
+      } catch (err) {
+        results.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
+      }
+    }
+ 
+    document.getElementById("searchBtn").addEventListener("click", runSearch);
+ 
+    async function submitClaim(itemId) {
+      const answer = prompt("Describe something only the true owner would know (mark, contents, sticker, etc):");
+      if (!answer) return;
+      try {
+        await apiRequest(`/items/${itemId}/claim`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifying_answer: answer }),
+        });
+        alert("Claim submitted. The finder will review it.");
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+    }
+ 
+    // run initial search on load
+    runSearch();
+  </script>
+</body>
+</html>
+ 
