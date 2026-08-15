@@ -63,3 +63,6 @@ class ClaimOut(BaseModel):
 
 class ClaimStatusUpdate(BaseModel):
     status: str  # "approved" or "rejected"
+    
+class ContactInfo(BaseModel):
+    email: str

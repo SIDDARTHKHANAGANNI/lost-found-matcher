@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Activity — Lost & Found</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav>
+    <a href="index.html">Post Item</a>
+    <a href="browse.html">Browse Found</a>
+    <a href="matches.html">My Matches</a>
+    <a href="claims.html">Review Claims</a>
+    <a href="activity.html" class="active">My Activity</a>
+    <a href="#" id="logoutLink">Log out</a>
+  </nav>
+
+  <div class="container" style="max-width: 900px;">
+    <div class="card">
+      <h1>My activity</h1>
+      <p class="subtitle">Track your posted items and claim status</p>
+    </div>
+
+    <h2 style="font-family:'Courier New',monospace; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:32px 0 12px;">My posted items</h2>
+    <div id="myItemsList" class="tile-grid"></div>
+
+    <h2 style="font-family:'Courier New',monospace; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:32px 0 12px;">Claims I've submitted</h2>
+    <div id="myClaimsList" class="tile-grid"></div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+
+    document.getElementById("logoutLink").addEventListener("click", (e) => {
+      e.preventDefault();
+      clearToken();
+      window.location.href = "login.html";
+    });
+
+    async function loadMyItems() {
+      const container = document.getElementById("myItemsList");
+      try {
+        const items = await apiRequest("/items/mine/all");
+        if (items.length === 0) {
+          container.innerHTML = `<p style="color: var(--muted);">You haven't posted any items yet.</p>`;
+          return;
+        }
+        container.innerHTML = items.map(item => `
+          <div class="item-card">
+            <span class="badge badge-${item.type}">${item.type}</span>
+            <h3>${item.category}</h3>
+            <p>${item.description}</p>
+            <p><strong>Location:</strong> ${item.location}</p>
+          </div>
+        `).join("");
+      } catch (err) {
+        container.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
+      }
+    }
+
+    async function loadMyClaims() {
+      const container = document.getElementById("myClaimsList");
+      try {
+        const claims = await apiRequest("/items/my-claims/submitted");
+        if (claims.length === 0) {
+          container.innerHTML = `<p style="color: var(--muted);">You haven't submitted any claims yet.</p>`;
+          return;
+        }
+
+        const cards = await Promise.all(claims.map(async (c) => {
+          let itemInfo = "";
+          try {
+            const item = await apiRequest(`/items/${c.item_id}`);
+            itemInfo = `<p><strong>Item:</strong> ${item.category} — ${item.description}</p>`;
+          } catch {
+            itemInfo = `<p><strong>Item:</strong> (no longer available)</p>`;
+          }
+
+          const statusColor = c.status === 'approved' ? 'found' : c.status === 'rejected' ? 'lost' : '';
+          return `
+            <div class="item-card">
+              <span class="badge badge-${statusColor}">${c.status}</span>
+              <h3>Your claim</h3>
+              ${itemInfo}
+              <p><strong>Your proof:</strong> "${c.identifying_answer}"</p>
+              <p><strong>Submitted:</strong> ${new Date(c.created_at).toLocaleString()}</p>
+              ${c.status === 'approved' ? `
+                <p style="color:var(--success); font-weight:700; margin-top:8px;">✓ Approved!</p>
+                <button onclick="getContact('${c.id}')" style="margin-top:10px;">Get finder's contact info</button>
+                <p id="contact-${c.id}" style="margin-top:8px; font-weight:600;"></p>
+              ` : ''}
+              ${c.status === 'rejected' ? `<p style="color:var(--danger); font-weight:700; margin-top:8px;">✗ Rejected — this wasn't a match.</p>` : ''}
+            </div>
+          `;
+        }));
+
+        container.innerHTML = cards.join("");
+      } catch (err) {
+        container.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
+      }
+    }
+
+    async function getContact(claimId) {
+      try {
+        const contact = await apiRequest(`/items/claims/${claimId}/contact`);
+        document.getElementById(`contact-${claimId}`).textContent = `Email: ${contact.email}`;
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+    }
+
+    loadMyItems();
+    loadMyClaims();
+  </script>
+</body>
+</html>

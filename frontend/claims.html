@@ -11,79 +11,93 @@
     <a href="browse.html">Browse Found</a>
     <a href="matches.html">My Matches</a>
     <a href="claims.html" class="active">Review Claims</a>
+    <a href="activity.html">My Activity</a>
     <a href="#" id="logoutLink">Log out</a>
   </nav>
 
-  <div class="container">
-    <div class="card">
-      <h1>Review claims</h1>
-      <p class="subtitle">Enter an item ID you posted to see claims against it</p>
-
-      <label for="itemId">Item ID</label>
-      <input type="text" id="itemId" placeholder="paste item ID from your posts">
-      <button id="loadBtn">Load claims</button>
-    </div>
-
-    <div id="claimsList" style="margin-top: 24px;"></div>
+<div class="container">
+  <div class="card">
+    <h1>Review claims</h1>
+    <p class="subtitle">Select an item you posted to see claims against it</p>
   </div>
 
-  <script src="js/api.js"></script>
-  <script>
-    requireAuth();
+  <div id="myItems" class="tile-grid" style="margin-top: 24px;"></div>
+  <div id="claimsList" style="margin-top: 24px;"></div>
+</div>
 
-    document.getElementById("logoutLink").addEventListener("click", (e) => {
-      e.preventDefault();
-      clearToken();
-      window.location.href = "login.html";
-    });
+<script src="js/api.js"></script>
+<script>
+  requireAuth();
 
-    async function loadClaims() {
-      const itemId = document.getElementById("itemId").value.trim();
-      const claimsList = document.getElementById("claimsList");
-      if (!itemId) return;
+  document.getElementById("logoutLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    clearToken();
+    window.location.href = "login.html";
+  });
 
-      claimsList.innerHTML = `<p style="color: var(--muted);">Loading...</p>`;
-
-      try {
-        const claims = await apiRequest(`/items/${itemId}/claims`);
-        if (claims.length === 0) {
-          claimsList.innerHTML = `<p style="color: var(--muted);">No claims on this item yet.</p>`;
-          return;
-        }
-
-        claimsList.innerHTML = claims.map(c => `
-          <div class="item-card">
-            <span class="badge badge-${c.status === 'approved' ? 'found' : c.status === 'rejected' ? 'lost' : ''}">${c.status}</span>
-            <h3>Claim</h3>
-            <p><strong>Claimant's proof:</strong> "${c.identifying_answer}"</p>
-            <p><strong>Submitted:</strong> ${new Date(c.created_at).toLocaleString()}</p>
-            ${c.status === 'pending' ? `
-              <div style="display:flex; gap:10px; margin-top:12px;">
-                <button onclick="updateClaim('${c.id}', 'approved')" style="margin-top:0;">Approve</button>
-                <button onclick="updateClaim('${c.id}', 'rejected')" style="margin-top:0; background:var(--danger); color:white;">Reject</button>
-              </div>
-            ` : ''}
-          </div>
-        `).join("");
-      } catch (err) {
-        claimsList.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
+  async function loadMyItems() {
+    const myItems = document.getElementById("myItems");
+    try {
+      const items = await apiRequest("/items/mine/all");
+      if (items.length === 0) {
+        myItems.innerHTML = `<p style="color: var(--muted);">You haven't posted any items yet.</p>`;
+        return;
       }
+      myItems.innerHTML = items.map(item => `
+        <div class="item-card" style="cursor:pointer;" onclick="loadClaims('${item.id}')">
+          <span class="badge badge-${item.type}">${item.type}</span>
+          <h3>${item.category}</h3>
+          <p>${item.description}</p>
+        </div>
+      `).join("");
+    } catch (err) {
+      myItems.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
     }
+  }
 
-    async function updateClaim(claimId, status) {
-      try {
-        await apiRequest(`/items/claims/${claimId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        });
-        loadClaims();
-      } catch (err) {
-        alert("Error: " + err.message);
+  async function loadClaims(itemId) {
+    const claimsList = document.getElementById("claimsList");
+    claimsList.innerHTML = `<p style="color: var(--muted);">Loading claims...</p>`;
+
+    try {
+      const claims = await apiRequest(`/items/${itemId}/claims`);
+      if (claims.length === 0) {
+        claimsList.innerHTML = `<p style="color: var(--muted);">No claims on this item yet.</p>`;
+        return;
       }
+      claimsList.innerHTML = claims.map(c => `
+        <div class="item-card">
+          <span class="badge badge-${c.status === 'approved' ? 'found' : c.status === 'rejected' ? 'lost' : ''}">${c.status}</span>
+          <h3>Claim</h3>
+          <p><strong>Proof:</strong> "${c.identifying_answer}"</p>
+          <p><strong>Submitted:</strong> ${new Date(c.created_at).toLocaleString()}</p>
+          ${c.status === 'pending' ? `
+            <div style="display:flex; gap:10px; margin-top:12px;">
+              <button onclick="updateClaim('${c.id}', 'approved')" style="margin-top:0;">Approve</button>
+              <button onclick="updateClaim('${c.id}', 'rejected')" style="margin-top:0; background:var(--danger); color:white;">Reject</button>
+            </div>
+          ` : ''}
+        </div>
+      `).join("");
+    } catch (err) {
+      claimsList.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
     }
+  }
 
-    document.getElementById("loadBtn").addEventListener("click", loadClaims);
-  </script>
+  async function updateClaim(claimId, status) {
+    try {
+      await apiRequest(`/items/claims/${claimId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      alert("Updated.");
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  }
+
+  loadMyItems();
+</script>
 </body>
 </html>

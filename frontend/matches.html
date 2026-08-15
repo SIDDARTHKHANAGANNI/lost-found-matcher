@@ -11,6 +11,7 @@
     <a href="browse.html">Browse Found</a>
     <a href="matches.html" class="active">My Matches</a>
     <a href="claims.html">Review Claims</a>
+    <a href="activity.html">My Activity</a>
     <a href="#" id="logoutLink">Log out</a>
   </nav>
 
@@ -23,59 +24,67 @@
     <div id="matchList" class="tile-grid" style="margin-top: 24px;"></div>
   </div>
 
-  <script src="js/api.js"></script>
-  <script>
-    requireAuth();
+<script src="js/api.js"></script>
+<script>
+  requireAuth();
 
-    document.getElementById("logoutLink").addEventListener("click", (e) => {
-      e.preventDefault();
-      clearToken();
-      window.location.href = "login.html";
-    });
+  document.getElementById("logoutLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    clearToken();
+    window.location.href = "login.html";
+  });
 
-    async function loadMatches() {
-      const matchList = document.getElementById("matchList");
-      matchList.innerHTML = `<p style="color: var(--cream);">Loading...</p>`;
+  async function loadMatches() {
+    const matchList = document.getElementById("matchList");
+    matchList.innerHTML = `<p style="color: var(--muted);">Loading...</p>`;
 
-      try {
-        const matches = await apiRequest("/items/my-matches");
-        if (matches.length === 0) {
-          matchList.innerHTML = `<p style="color: var(--cream);">No matches yet. Check back after posting an item.</p>`;
-          return;
-        }
-
-        matchList.innerHTML = matches.map(m => {
-          const pct = Math.round(m.similarity_score * 100);
-          return `
-            <div class="item-card">
-              <span class="badge badge-${m.status === 'confirmed' ? 'found' : 'lost'}">${m.status}</span>
-              <h3>Match — ${pct}% confidence</h3>
-              <p><strong>Lost item ID:</strong> ${m.lost_item_id}</p>
-              <p><strong>Found item ID:</strong> ${m.found_item_id}</p>
-              <div class="similarity-bar"><div class="similarity-fill" style="width:${pct}%"></div></div>
-              ${m.status === 'pending' ? `<button onclick="approveMatch('${m.id}')">Confirm this match</button>` : ''}
-            </div>
-          `;
-        }).join("");
-      } catch (err) {
-        matchList.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
+    try {
+      const matches = await apiRequest("/items/my-matches");
+      if (matches.length === 0) {
+        matchList.innerHTML = `<p style="color: var(--muted);">No matches yet. Check back after posting an item.</p>`;
+        return;
       }
-    }
 
-    async function approveMatch(matchId) {
-      try {
-        await apiRequest(`/items/matches/${matchId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "confirmed" }),
-        });
-        loadMatches();
-      } catch (err) {
-        alert("Error: " + err.message);
-      }
-    }
+      const cards = await Promise.all(matches.map(async (m) => {
+        const [lostItem, foundItem] = await Promise.all([
+          apiRequest(`/items/${m.lost_item_id}`),
+          apiRequest(`/items/${m.found_item_id}`),
+        ]);
+        const pct = Math.round(m.similarity_score * 100);
 
-    loadMatches();
-  </script>
+        return `
+          <div class="item-card">
+            <span class="badge badge-${m.status === 'confirmed' ? 'found' : 'lost'}">${m.status}</span>
+            <h3>${pct}% confidence match</h3>
+            <p><strong>Lost:</strong> ${lostItem.category} — ${lostItem.description}</p>
+            <p><strong>Found:</strong> ${foundItem.category} — ${foundItem.description}</p>
+            <p><strong>Locations:</strong> ${lostItem.location} → ${foundItem.location}</p>
+            <div class="similarity-bar"><div class="similarity-fill" style="width:${pct}%"></div></div>
+            ${m.status === 'pending' ? `<button onclick="approveMatch('${m.id}')">Confirm this match</button>` : ''}
+          </div>
+        `;
+      }));
+
+      matchList.innerHTML = cards.join("");
+    } catch (err) {
+      matchList.innerHTML = `<p style="color: var(--danger);">${err.message}</p>`;
+    }
+  }
+
+  async function approveMatch(matchId) {
+    try {
+      await apiRequest(`/items/matches/${matchId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "confirmed" }),
+      });
+      loadMatches();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+  }
+
+  loadMatches();
+</script>
 </body>
 </html>
