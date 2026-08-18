@@ -1,23 +1,26 @@
 import os
 import uuid
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Item, ItemType
-from app.schemas import ItemOut, MatchOut
+from app.models import Item, ItemType, Match, Claim, User
+from app.schemas import (
+    ItemOut, MatchOut, MatchUpdate, ClaimCreate, ClaimOut,
+    ClaimStatusUpdate, ContactInfo
+)
 from app.services.embedding import embedding_service
 from app.services.matching import find_matches, save_matches
 from app.config import settings
 from app.auth import get_current_user
-from app.schemas import MatchUpdate
-from app.models import Match
-from app.models import Claim
-from app.schemas import ClaimCreate, ClaimOut, ClaimStatusUpdate , ContactInfo
+from app.services.rate_limit import limiter
 
 router = APIRouter()
 
+
 @router.get("/browse", response_model=list[ItemOut])
+@limiter.limit(settings.rate_limit_public)
 def browse_items(
+    request: Request,
     type: ItemType = ItemType.found,
     category: str | None = None,
     location: str | None = None,
@@ -25,22 +28,22 @@ def browse_items(
     db: Session = Depends(get_db),
 ):
     query = db.query(Item).filter(Item.type == type)
-
     if category:
         query = query.filter(Item.category == category)
     if location:
         query = query.filter(Item.location == location)
     if search:
         query = query.filter(Item.description.ilike(f"%{search}%"))
-
     return query.order_by(Item.created_at.desc()).all()
 
+
 @router.get("/my-matches", response_model=list[MatchOut])
+@limiter.limit(settings.rate_limit_authenticated)
 def my_matches(
+    request: Request,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user),
 ):
-    from app.models import Match
     my_item_ids = [i.id for i in db.query(Item).filter(Item.user_id == user_id).all()]
     matches = db.query(Match).filter(
         (Match.lost_item_id.in_(my_item_ids)) | (Match.found_item_id.in_(my_item_ids))
@@ -49,14 +52,30 @@ def my_matches(
 
 
 @router.get("/mine/all", response_model=list[ItemOut])
+@limiter.limit(settings.rate_limit_authenticated)
 def my_items(
+    request: Request,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user),
 ):
     return db.query(Item).filter(Item.user_id == user_id).order_by(Item.created_at.desc()).all()
 
+
+@router.get("/my-claims/submitted", response_model=list[ClaimOut])
+@limiter.limit(settings.rate_limit_authenticated)
+def my_submitted_claims(
+    request: Request,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user),
+):
+    claims = db.query(Claim).filter(Claim.claimant_id == user_id).order_by(Claim.created_at.desc()).all()
+    return claims
+
+
 @router.post("/", response_model=ItemOut)
+@limiter.limit(settings.rate_limit_authenticated)
 async def create_item(
+    request: Request,
     type: ItemType = Form(...),
     category: str = Form(...),
     description: str = Form(...),
@@ -94,30 +113,29 @@ async def create_item(
 
     return item
 
+
 @router.get("/", response_model=list[ItemOut])
-def list_items(type: ItemType | None = None, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_public)
+def list_items(request: Request, type: ItemType | None = None, db: Session = Depends(get_db)):
     query = db.query(Item)
     if type:
         query = query.filter(Item.type == type)
     return query.order_by(Item.created_at.desc()).all()
 
-@router.get("/my-claims/submitted", response_model=list[ClaimOut])
-def my_submitted_claims(
-    db: Session = Depends(get_db),
-    user_id: uuid.UUID = Depends(get_current_user),
-):
-    claims = db.query(Claim).filter(Claim.claimant_id == user_id).order_by(Claim.created_at.desc()).all()
-    return claims
 
 @router.get("/{item_id}", response_model=ItemOut)
-def get_item(item_id: uuid.UUID, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_public)
+def get_item(request: Request, item_id: uuid.UUID, db: Session = Depends(get_db)):
     item = db.query(Item).filter(Item.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     return item
 
+
 @router.post("/{item_id}/claim", response_model=ClaimOut)
+@limiter.limit(settings.rate_limit_authenticated)
 def submit_claim(
+    request: Request,
     item_id: uuid.UUID,
     claim_in: ClaimCreate,
     db: Session = Depends(get_db),
@@ -137,14 +155,17 @@ def submit_claim(
     db.refresh(claim)
     return claim
 
+
 @router.get("/{item_id}/claims", response_model=list[ClaimOut])
-def list_claims(item_id: uuid.UUID, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_authenticated)
+def list_claims(request: Request, item_id: uuid.UUID, db: Session = Depends(get_db)):
     claims = db.query(Claim).filter(Claim.item_id == item_id).order_by(Claim.created_at.desc()).all()
     return claims
 
+
 @router.get("/{item_id}/matches", response_model=list[MatchOut])
-def get_matches(item_id: uuid.UUID, db: Session = Depends(get_db)):
-    from app.models import Match
+@limiter.limit(settings.rate_limit_authenticated)
+def get_matches(request: Request, item_id: uuid.UUID, db: Session = Depends(get_db)):
     matches = db.query(Match).filter(
         (Match.lost_item_id == item_id) | (Match.found_item_id == item_id)
     ).order_by(Match.similarity_score.desc()).all()
@@ -154,7 +175,10 @@ def get_matches(item_id: uuid.UUID, db: Session = Depends(get_db)):
 
 
 @router.patch("/matches/{match_id}", response_model=MatchOut)
-def update_match_status(match_id: uuid.UUID, update: MatchUpdate, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_authenticated)
+def update_match_status(
+    request: Request, match_id: uuid.UUID, update: MatchUpdate, db: Session = Depends(get_db)
+):
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -163,29 +187,11 @@ def update_match_status(match_id: uuid.UUID, update: MatchUpdate, db: Session = 
     db.refresh(match)
     return match
 
-@router.get("/browse", response_model=list[ItemOut])
-def browse_items(
-    type: ItemType = ItemType.found,
-    category: str | None = None,
-    location: str | None = None,
-    search: str | None = None,
-    db: Session = Depends(get_db),
-):
-    query = db.query(Item).filter(Item.type == type)
-    if category:
-        query = query.filter(Item.category == category)
-    if location:
-        query = query.filter(Item.location == location)
-    if search:
-        query = query.filter(Item.description.ilike(f"%{search}%"))
-    return query.order_by(Item.created_at.desc()).all()
-
-
-
-
 
 @router.patch("/claims/{claim_id}", response_model=ClaimOut)
+@limiter.limit(settings.rate_limit_authenticated)
 def update_claim_status(
+    request: Request,
     claim_id: uuid.UUID,
     update: ClaimStatusUpdate,
     db: Session = Depends(get_db),
@@ -198,10 +204,11 @@ def update_claim_status(
     db.refresh(claim)
     return claim
 
-from app.models import User
 
 @router.get("/claims/{claim_id}/contact", response_model=ContactInfo)
+@limiter.limit(settings.rate_limit_authenticated)
 def get_contact_after_approval(
+    request: Request,
     claim_id: uuid.UUID,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user),
