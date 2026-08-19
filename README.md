@@ -34,6 +34,13 @@ This project solves both — automated matching for people who have a photo, man
 - Plain HTML, CSS, and JavaScript — no framework, no build step
 - Directly consumes the FastAPI backend via `fetch`
 
+## Security
+
+- **University-restricted signup.** Accounts can only be created with a university email address (domain allowlist, configurable via `ALLOWED_EMAIL_DOMAINS`), keeping the platform scoped to the campus community rather than open to the public internet.
+- **Rate limiting.** Per-IP limits on all endpoints (stricter on auth routes), plus per-account exponential backoff on repeated failed logins — not a hard lockout. All thresholds are configurable via environment variables, not hardcoded.
+- **Strict input validation.** Every request is validated against explicit type, length, and format rules (Pydantic schema-level validation) and rejected outright if it doesn't conform — not sanitized or silently truncated.
+- **File upload safety.** Uploaded images are validated by actually decoding the file content (not just trusting the extension or `Content-Type` header, both of which are client-supplied and spoofable), restricted to JPEG/PNG/WEBP, size-capped, and re-encoded server-side before storage to strip any embedded payloads. Filenames are always server-generated, never derived from client input.
+
 ## Core engineering decisions
 
 - **Hybrid embeddings over pure image matching.** Generic items (a plain black backpack, a steel water bottle) look nearly identical to a vision model. Blending image embeddings with text-description embeddings gives the matcher more to work with than pixels alone.
@@ -118,11 +125,11 @@ Covers CLIP embedding output shape/determinism and the location/time scoring log
 
 ## Known limitations / future work
 
+- **Email domain check, not email verification.** Signup checks that the email matches an allowed university domain (e.g. `@rvu.edu.in`), but doesn't confirm the address actually belongs to the person signing up — there's no confirmation-link/click-through step yet. Someone could type in a fake address on the right domain. Real email verification (send a confirmation link, activate the account only after it's clicked) is the next step before a wider rollout.
 - **Contact is email-only** — no in-app messaging yet. Reasonable as a v1, but a real chat flow would be smoother.
 - **Local file storage** — uploaded images are stored on the server's local filesystem, which doesn't persist across container redeploys. Would move to S3-compatible object storage (e.g. Cloudflare R2) for production use.
-- **No rate limiting or upload validation yet** — needed before wider public rollout to prevent spam or abuse.
 - **No real-time notifications** — match/claim status updates require checking the Activity page rather than getting pushed to the user.
 
 ## Author
 
-Built by Siddarth K, CSE @ RV University.
+Built by Siddarth S K, CSE @ RV University.
