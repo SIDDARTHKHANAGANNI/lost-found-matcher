@@ -3,13 +3,23 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
 from datetime import datetime
 from app.models import ItemType, MatchStatus
+from app.config import settings
 
 
 # ---------- Auth ----------
-
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=72)
+
+    @field_validator("email")
+    @classmethod
+    def email_domain_restricted(cls, v: str) -> str:
+        domain = v.split("@")[-1].lower()
+        if domain not in settings.allowed_domains_list:
+            raise ValueError(
+                f"Signup restricted to university email addresses ({', '.join(settings.allowed_domains_list)})"
+            )
+        return v
 
     @field_validator("password")
     @classmethod
@@ -19,8 +29,7 @@ class UserCreate(BaseModel):
         if not re.search(r"[0-9]", v):
             raise ValueError("Password must contain at least one number")
         return v
-
-
+    
 class UserLogin(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=1, max_length=72)
