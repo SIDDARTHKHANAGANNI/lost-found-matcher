@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
-from app.schemas import UserCreate, UserOut, Token
+from app.schemas import UserCreate,UserLogin, UserOut, Token
 from app.auth import hash_password, verify_password, create_access_token
 from app.services.rate_limit import (
     limiter, check_account_backoff, record_failed_attempt, clear_failed_attempts
@@ -26,7 +26,7 @@ def signup(request: Request, user_in: UserCreate, db: Session = Depends(get_db))
 
 @router.post("/login", response_model=Token)
 @limiter.limit(settings.rate_limit_auth_per_ip)
-def login(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
+def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
     check_account_backoff(user_in.email)
 
     user = db.query(User).filter(User.email == user_in.email).first()

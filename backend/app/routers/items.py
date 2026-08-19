@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Item, ItemType, Match, Claim, User
 from app.schemas import (
-    ItemOut, MatchOut, MatchUpdate, ClaimCreate, ClaimOut,
+    ItemOut, ItemCreate, MatchOut, MatchUpdate, ClaimCreate, ClaimOut,
     ClaimStatusUpdate, ContactInfo
 )
 from app.services.embedding import embedding_service
@@ -13,7 +13,12 @@ from app.services.matching import find_matches, save_matches
 from app.config import settings
 from app.auth import get_current_user
 from app.services.rate_limit import limiter
-
+from pydantic import ValidationError
+from PIL import Image
+from PIL import UnidentifiedImageError
+import io
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024  # 8MB
 router = APIRouter()
 
 
@@ -84,22 +89,60 @@ async def create_item(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user),
 ):
+    try:
+        validated = ItemCreate(type=type, category=category, description=description, location=location)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
+    
+    # size check first, cheapest rejection
+    contents = await image.read()
+    if len(contents) > MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Image exceeds 8MB size limit")
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    # verify the file is genuinely a valid image by attempting to decode it —
+    # extension and Content-Type headers are client-supplied and can be spoofed,
+    # so we never trust them alone
+    try:
+        img = Image.open(io.BytesIO(contents))
+        img.verify()  # checks structural validity without fully decoding
+        # re-open after verify() (verify() invalidates the file pointer)
+        img = Image.open(io.BytesIO(contents))
+        img.load()
+    except (UnidentifiedImageError, OSError, ValueError):
+        raise HTTPException(status_code=400, detail="File is not a valid image")
+
+    if img.format not in {"JPEG", "PNG", "WEBP"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image format: {img.format}. Allowed: JPEG, PNG, WEBP",
+        )
+
+    # re-encode to strip any embedded payloads/metadata (polyglot file defense) —
+    # we never write the client's raw bytes to disk, only a clean re-render
+    img = img.convert("RGB")
+    output_buffer = io.BytesIO()
+    save_format = "JPEG" if img.format != "PNG" else "PNG"
+    img.save(output_buffer, format=save_format, quality=90)
+    clean_contents = output_buffer.getvalue()
+
     os.makedirs(settings.upload_dir, exist_ok=True)
-    ext = image.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{ext}"
+    ext = "jpg" if save_format == "JPEG" else "png"
+    filename = f"{uuid.uuid4()}.{ext}"  # server-generated name — never trust client filename
     filepath = os.path.join(settings.upload_dir, filename)
 
     with open(filepath, "wb") as f:
-        f.write(await image.read())
-
-    embedding = embedding_service.embed_combined(filepath, description)
+        f.write(clean_contents)
+        
+    embedding = embedding_service.embed_combined(filepath, validated.description)
 
     item = Item(
         user_id=user_id,
-        type=type,
-        category=category,
-        description=description,
-        location=location,
+        type=validated.type,
+        category=validated.category,
+        description=validated.description,
+        location=validated.location,
         image_url=filepath,
         embedding=embedding,
     )

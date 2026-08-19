@@ -1,17 +1,79 @@
-from pydantic import BaseModel
+import re
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
 from datetime import datetime
 from app.models import ItemType, MatchStatus
-from app.models import MatchStatus
 
-class MatchUpdate(BaseModel):
-    status: MatchStatus
-    
+
+# ---------- Auth ----------
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain at least one number")
+        return v
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=72)
+class UserOut(BaseModel):
+    id: UUID
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+# ---------- Items ----------
+
+ALLOWED_CATEGORIES = {
+    "backpack", "bottle", "phone", "wallet", "umbrella", "keys",
+    "laptop", "charger", "book", "id_card", "headphones", "bag", "other"
+}
+
 class ItemCreate(BaseModel):
     type: ItemType
-    category: str
-    description: str
-    location: str
+    category: str = Field(..., min_length=2, max_length=40)
+    description: str = Field(..., min_length=5, max_length=500)
+    location: str = Field(..., min_length=2, max_length=100)
+
+    @field_validator("category")
+    @classmethod
+    def category_format(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-z0-9 _-]+", v):
+            raise ValueError("Category may only contain letters, numbers, spaces, - and _")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def description_no_control_chars(cls, v: str) -> str:
+        v = v.strip()
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", v):
+            raise ValueError("Description contains invalid control characters")
+        return v
+
+    @field_validator("location")
+    @classmethod
+    def location_format(cls, v: str) -> str:
+        v = v.strip()
+        if not re.fullmatch(r"[A-Za-z0-9 .,'-]+", v):
+            raise ValueError("Location contains invalid characters")
+        return v
+
 
 class ItemOut(BaseModel):
     id: UUID
@@ -22,7 +84,11 @@ class ItemOut(BaseModel):
     image_url: str
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    class Config:
+        from_attributes = True
+
+
+# ---------- Matches ----------
 
 class MatchOut(BaseModel):
     id: UUID
@@ -31,24 +97,27 @@ class MatchOut(BaseModel):
     similarity_score: float
     status: MatchStatus
 
-    model_config = {"from_attributes": True}
-        
-class UserCreate(BaseModel):
-    email: str
-    password: str
+    class Config:
+        from_attributes = True
 
-class UserOut(BaseModel):
-    id: UUID
-    email: str
 
-    model_config = {"from_attributes": True}
+class MatchUpdate(BaseModel):
+    status: MatchStatus
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    
+
+# ---------- Claims ----------
+
 class ClaimCreate(BaseModel):
-    identifying_answer: str
+    identifying_answer: str = Field(..., min_length=10, max_length=500)
+
+    @field_validator("identifying_answer")
+    @classmethod
+    def answer_no_control_chars(cls, v: str) -> str:
+        v = v.strip()
+        if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", v):
+            raise ValueError("Answer contains invalid control characters")
+        return v
+
 
 class ClaimOut(BaseModel):
     id: UUID
@@ -61,8 +130,10 @@ class ClaimOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ClaimStatusUpdate(BaseModel):
-    status: str  # "approved" or "rejected"
-    
+    status: str = Field(..., pattern="^(approved|rejected)$")
+
+
 class ContactInfo(BaseModel):
-    email: str
+    email: str  
