@@ -6,10 +6,22 @@ _MODEL_NAME = "openai/clip-vit-base-patch32"
 
 class EmbeddingService:
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = CLIPModel.from_pretrained(_MODEL_NAME).to(self.device)
-        self.processor = CLIPProcessor.from_pretrained(_MODEL_NAME)
-        self.model.eval()
+        self.device = "cpu"
+        self._model = None
+        self._processor = None
+
+    @property
+    def model(self):
+        if self._model is None:
+            self._model = CLIPModel.from_pretrained(_MODEL_NAME).to(self.device)
+            self._model.eval()
+        return self._model
+
+    @property
+    def processor(self):
+        if self._processor is None:
+            self._processor = CLIPProcessor.from_pretrained(_MODEL_NAME)
+        return self._processor
 
     @torch.no_grad()
     def embed_image(self, image_path: str) -> list[float]:
@@ -36,5 +48,4 @@ class EmbeddingService:
         norm = sum(x ** 2 for x in combined) ** 0.5
         return [x / norm for x in combined]
 
-# singleton — load model once at startup, not per-request
 embedding_service = EmbeddingService()
